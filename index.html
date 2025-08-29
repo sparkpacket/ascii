@@ -3,20 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Image to ASCII Converter</title>
+<title>Image/Video to ASCII Converter</title>
 <style>
     body {
         font-family: monospace;
         background-color: #111;
         color: #eee;
         text-align: center;
-        padding: 20px;
+        padding: 10px;
+        overflow: hidden;
     }
     #asciiOutput {
         white-space: pre;
-        display: inline-block;
         text-align: left;
-        line-height: 7px; /* adjust for vertical scaling */
+        line-height: 7px;
+        font-size: 8px;
+        display: inline-block;
+        max-width: 100vw;
+        max-height: 100vh;
+        overflow: hidden;
     }
     input, label {
         margin: 5px;
@@ -24,69 +29,115 @@
 </style>
 </head>
 <body>
-<h1>Image to ASCII Converter</h1>
-<input type="file" id="imageInput" accept="image/*"><br>
-<label for="size">Width (characters): </label>
+<h1>ASCII Converter (Images, Videos, GIFs)</h1>
+<input type="file" id="fileInput" accept="image/*,video/*"><br>
+<label for="size">Size (characters): </label>
 <input type="number" id="size" value="100" min="10" max="500"><br>
 <label for="color">Color: </label>
 <input type="checkbox" id="color"><br>
-<button id="convertBtn">Convert to ASCII</button>
-
+<button id="convertBtn">Convert</button>
 <pre id="asciiOutput"></pre>
 
 <script>
-const imageInput = document.getElementById('imageInput');
+const fileInput = document.getElementById('fileInput');
 const convertBtn = document.getElementById('convertBtn');
 const asciiOutput = document.getElementById('asciiOutput');
 const sizeInput = document.getElementById('size');
 const colorCheckbox = document.getElementById('color');
 
-const asciiChars = " .:-=+*#%@"; // dark to light
+// ASCII chars from dark to light, @ is lightest
+const asciiChars = " .:-=+*#%@";
+
+let video = null;
+let animationId = null;
 
 convertBtn.addEventListener('click', () => {
-    if (!imageInput.files[0]) return alert("Please upload an image!");
-    const file = imageInput.files[0];
-    const img = new Image();
-    const reader = new FileReader();
-    
-    reader.onload = e => {
-        img.src = e.target.result;
-    };
-    
-    img.onload = () => {
-        const width = parseInt(sizeInput.value);
-        const scale = img.height / img.width;
-        const height = Math.floor(width * scale);
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        const imageData = ctx.getImageData(0, 0, width, height).data;
+    if (!fileInput.files[0]) return alert("Please upload a file!");
+    cancelAnimationFrame(animationId);
 
-        let asciiStr = '';
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const i = (y * width + x) * 4;
-                const r = imageData[i];
-                const g = imageData[i + 1];
-                const b = imageData[i + 2];
-                const brightness = (0.299*r + 0.587*g + 0.114*b);
-                const char = asciiChars[Math.floor((brightness/255) * (asciiChars.length-1))];
-                
-                if(colorCheckbox.checked){
-                    asciiStr += `<span style="color: rgb(${r},${g},${b})">${char}</span>`;
-                } else {
-                    asciiStr += char;
-                }
-            }
-            asciiStr += '\n';
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+
+    reader.onload = e => {
+        const url = e.target.result;
+        if(file.type.startsWith('image/')){
+            loadImage(url);
+        } else if(file.type.startsWith('video/')){
+            loadVideo(url);
+        } else {
+            alert("Unsupported file type!");
         }
-        asciiOutput.innerHTML = asciiStr;
     };
-    
     reader.readAsDataURL(file);
+});
+
+function loadImage(src){
+    const img = new Image();
+    img.onload = () => {
+        renderFrame(img);
+    };
+    img.src = src;
+}
+
+function loadVideo(src){
+    video = document.createElement('video');
+    video.src = src;
+    video.loop = true;
+    video.muted = true;
+    video.play();
+    video.addEventListener('play', () => {
+        renderVideoFrame();
+    });
+}
+
+function renderVideoFrame(){
+    if(video.paused || video.ended) return;
+    renderFrame(video);
+    animationId = requestAnimationFrame(renderVideoFrame);
+}
+
+function renderFrame(media){
+    const size = parseInt(sizeInput.value);
+    const aspect = media.height / media.width;
+
+    // Calculate size to fit screen
+    const maxWidth = window.innerWidth / 8; // approx char width
+    const maxHeight = window.innerHeight / 7; // approx char height
+    let width = Math.min(size, maxWidth);
+    let height = Math.min(Math.floor(width * aspect), maxHeight);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(media, 0, 0, width, height);
+    const data = ctx.getImageData(0, 0, width, height).data;
+
+    let asciiStr = '';
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            const i = (y*width + x)*4;
+            const r = data[i];
+            const g = data[i+1];
+            const b = data[i+2];
+            const brightness = 0.299*r + 0.587*g + 0.114*b;
+            const char = asciiChars[Math.floor((brightness/255)*(asciiChars.length-1))];
+            if(colorCheckbox.checked){
+                asciiStr += `<span style="color: rgb(${r},${g},${b})">${char}</span>`;
+            } else {
+                asciiStr += char;
+            }
+        }
+        asciiStr += '\n';
+    }
+    asciiOutput.innerHTML = asciiStr;
+}
+
+// Resize text on window resize
+window.addEventListener('resize', () => {
+    if(video){
+        renderFrame(video);
+    }
 });
 </script>
 </body>
