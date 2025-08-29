@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image to ASCII Converter</title>
+<style>
+    body {
+        font-family: monospace;
+        background-color: #111;
+        color: #eee;
+        text-align: center;
+        padding: 20px;
+    }
+    #asciiOutput {
+        white-space: pre;
+        display: inline-block;
+        text-align: left;
+        line-height: 7px; /* adjust for vertical scaling */
+    }
+    input, label {
+        margin: 5px;
+    }
+</style>
+</head>
+<body>
+<h1>Image to ASCII Converter</h1>
+<input type="file" id="imageInput" accept="image/*"><br>
+<label for="size">Width (characters): </label>
+<input type="number" id="size" value="100" min="10" max="500"><br>
+<label for="color">Color: </label>
+<input type="checkbox" id="color"><br>
+<button id="convertBtn">Convert to ASCII</button>
+
+<pre id="asciiOutput"></pre>
+
+<script>
+const imageInput = document.getElementById('imageInput');
+const convertBtn = document.getElementById('convertBtn');
+const asciiOutput = document.getElementById('asciiOutput');
+const sizeInput = document.getElementById('size');
+const colorCheckbox = document.getElementById('color');
+
+const asciiChars = "@%#*+=-:. "; // dark to light
+
+convertBtn.addEventListener('click', () => {
+    if (!imageInput.files[0]) return alert("Please upload an image!");
+    const file = imageInput.files[0];
+    const img = new Image();
+    const reader = new FileReader();
+    
+    reader.onload = e => {
+        img.src = e.target.result;
+    };
+    
+    img.onload = () => {
+        const width = parseInt(sizeInput.value);
+        const scale = img.height / img.width;
+        const height = Math.floor(width * scale);
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const imageData = ctx.getImageData(0, 0, width, height).data;
+
+        let asciiStr = '';
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const i = (y * width + x) * 4;
+                const r = imageData[i];
+                const g = imageData[i + 1];
+                const b = imageData[i + 2];
+                const brightness = (0.299*r + 0.587*g + 0.114*b);
+                const char = asciiChars[Math.floor((brightness/255) * (asciiChars.length-1))];
+                
+                if(colorCheckbox.checked){
+                    asciiStr += `<span style="color: rgb(${r},${g},${b})">${char}</span>`;
+                } else {
+                    asciiStr += char;
+                }
+            }
+            asciiStr += '\n';
+        }
+        asciiOutput.innerHTML = asciiStr;
+    };
+    
+    reader.readAsDataURL(file);
+});
+</script>
+</body>
+</html>
