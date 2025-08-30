@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Image/GIF/Video to ASCII Converter</title>
+<title>Image / GIF / Video to ASCII</title>
 <style>
     body {
         font-family: monospace;
@@ -16,10 +16,10 @@
         white-space: pre;
         display: inline-block;
         text-align: left;
-        line-height: 7px; /* adjust for vertical scaling */
+        line-height: 7px; /* vertical scaling */
         font-size: 8px;
     }
-    input, label {
+    input, label, button {
         margin: 5px;
     }
 </style>
@@ -32,86 +32,125 @@
 <label for="color">Color: </label>
 <input type="checkbox" id="color"><br>
 <button id="convertBtn">Convert</button>
+<button id="pauseBtn" disabled>Pause</button>
+<button id="resumeBtn" disabled>Resume</button>
+<label for="speed">Speed: </label>
+<input type="number" id="speed" value="100" min="10" max="1000"> ms/frame
 
 <pre id="asciiOutput"></pre>
 
 <script>
-const mediaInput = document.getElementById('mediaInput');
-const convertBtn = document.getElementById('convertBtn');
-const asciiOutput = document.getElementById('asciiOutput');
-const sizeInput = document.getElementById('size');
-const colorCheckbox = document.getElementById('color');
-
 const asciiChars = " .:-=+*#%@"; // dark to light
-let playing = false;
+const asciiOutput = document.getElementById("asciiOutput");
+const mediaInput = document.getElementById("mediaInput");
+const sizeInput = document.getElementById("size");
+const colorCheckbox = document.getElementById("color");
+const convertBtn = document.getElementById("convertBtn");
+const pauseBtn = document.getElementById("pauseBtn");
+const resumeBtn = document.getElementById("resumeBtn");
+const speedInput = document.getElementById("speed");
 
-function frameToAscii(ctx, width, height){
+let frames = [];
+let frameIndex = 0;
+let intervalId = null;
+let paused = false;
+
+function frameToAscii(ctx, width, height) {
     const imageData = ctx.getImageData(0, 0, width, height).data;
     let asciiStr = '';
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const i = (y * width + x) * 4;
             const r = imageData[i];
-            const g = imageData[i + 1];
-            const b = imageData[i + 2];
+            const g = imageData[i+1];
+            const b = imageData[i+2];
             const brightness = (0.299*r + 0.587*g + 0.114*b);
             const char = asciiChars[Math.floor((brightness/255) * (asciiChars.length-1))];
-            
-            if(colorCheckbox.checked){
-                asciiStr += `<span style="color: rgb(${r},${g},${b})">${char}</span>`;
+            if (colorCheckbox.checked) {
+                asciiStr += `<span style="color:rgb(${r},${g},${b})">${char}</span>`;
             } else {
                 asciiStr += char;
             }
         }
-        asciiStr += '\n';
+        asciiStr += "\n";
     }
-    asciiOutput.innerHTML = asciiStr;
+    return asciiStr;
 }
 
-convertBtn.addEventListener('click', () => {
-    if (!mediaInput.files[0]) return alert("Please upload an image, GIF, or video!");
+function playFrames() {
+    clearInterval(intervalId);
+    intervalId = setInterval(() => {
+        if (!paused && frames.length > 0) {
+            asciiOutput.innerHTML = frames[frameIndex];
+            frameIndex = (frameIndex + 1) % frames.length; // loop
+        }
+    }, parseInt(speedInput.value));
+}
+
+convertBtn.addEventListener("click", () => {
+    if (!mediaInput.files[0]) return alert("Upload an image, GIF, or video!");
+
+    frames = [];
+    frameIndex = 0;
+    clearInterval(intervalId);
+
     const file = mediaInput.files[0];
     const url = URL.createObjectURL(file);
 
-    let media;
-    if (file.type.startsWith("video") || file.type.endsWith("gif")) {
-        media = document.createElement('video');
-        media.src = url;
-        media.loop = true;
-        media.muted = true;
-        media.play();
+    if (file.type.startsWith("image/") && !file.type.endsWith("gif")) {
+        // Regular static image
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+            const width = parseInt(sizeInput.value);
+            const scale = img.height / img.width;
+            const height = Math.floor(width * scale);
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, width, height);
+            asciiOutput.innerHTML = frameToAscii(ctx, width, height);
+        };
     } else {
-        media = new Image();
-        media.src = url;
-    }
+        // GIFs & videos → capture frames
+        const video = document.createElement("video");
+        video.src = url;
+        video.muted = true;
+        video.loop = false;
+        video.play();
 
-    media.onload = media.onloadeddata = () => {
-        const width = parseInt(sizeInput.value);
-        const scale = media.height / media.width;
-        const height = Math.floor(width * scale);
+        video.onloadeddata = () => {
+            const width = parseInt(sizeInput.value);
+            const scale = video.videoHeight / video.videoWidth;
+            const height = Math.floor(width * scale);
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
 
-        if (media.tagName === "IMG") {
-            // Static image
-            ctx.drawImage(media, 0, 0, width, height);
-            frameToAscii(ctx, width, height);
-        } else {
-            // GIFs and Videos: animate
-            playing = true;
-            function renderFrame(){
-                if (!playing) return;
-                ctx.drawImage(media, 0, 0, width, height);
-                frameToAscii(ctx, width, height);
-                requestAnimationFrame(renderFrame);
+            function capture() {
+                if (video.ended) {
+                    // All frames captured
+                    video.pause();
+                    playFrames();
+                    pauseBtn.disabled = false;
+                    resumeBtn.disabled = false;
+                    return;
+                }
+                ctx.drawImage(video, 0, 0, width, height);
+                frames.push(frameToAscii(ctx, width, height));
+                requestAnimationFrame(capture);
             }
-            renderFrame();
-        }
-    };
+            capture();
+        };
+    }
 });
+
+pauseBtn.addEventListener("click", () => { paused = true; });
+resumeBtn.addEventListener("click", () => { paused = false; });
+speedInput.addEventListener("change", playFrames);
 </script>
 </body>
 </html>
